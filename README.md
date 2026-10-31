@@ -24,10 +24,62 @@ Match commentary is displayed as a chronological center-line timeline, with the 
 
 ## Project structure
 
-- `app/src/main/java/com/aknozgn/aknspor/MainActivity.kt` hosts the bundled web interface in Android WebView and provides the native network proxy and notification bridge.
-- `app/src/main/java/com/aknozgn/aknspor/FavoriteGoalWorker.kt` handles periodic background checks for favorite-team goals when API-Sports is configured.
-- `app/src/main/assets/www/` contains the app's HTML, CSS, JavaScript, and icons. No hosted website is required to display the interface.
-- `app/build.gradle.kts` reads the optional API key from the untracked local `local.properties`; do not commit API keys.
+## Kaynak kodlar ne yapıyor?
+
+### Android uygulaması (Kotlin)
+
+| Dosya | Görevi |
+|---|---|
+| `app/src/main/java/com/aknozgn/aknspor/MainActivity.kt` | Android uygulamasının başlangıç ekranı. Yerel HTML arayüzünü WebView içinde açar, internet isteklerini FotMob/API-Sports/Google Haberler'e güvenli biçimde yönlendirir ve JavaScript ile Android arasındaki bildirim, metin okuma ve haber bağlantısı köprüsünü sağlar. |
+| `app/src/main/java/com/aknozgn/aknspor/FavoriteGoalWorker.kt` | Android arka plandayken WorkManager ile yaklaşık 15 dakikada bir çalışan görev. Favori takımların gollerini, takip edilen maçların başlangıç/bitişini ve seçilen oyuncuların gollerini kontrol edip Android bildirimi gönderir. |
+| `app/src/main/AndroidManifest.xml` | Uygulama adını, simgesini, açılış etkinliğini ve internet/bildirim gibi Android izinlerini tanımlar. |
+| `app/src/main/res/values/strings.xml` | Android'de gösterilen uygulama adını tutar. |
+| `app/src/main/res/values/styles.xml` | Açılış teması ve sistem çubuklarının temel görünümünü tanımlar. |
+| `app/src/main/res/drawable-nodpi/ic_launcher.png` | Android ana ekranındaki uygulama simgesi. |
+
+`MainActivity.kt` içindeki önemli bölümler:
+
+- `onCreate`: WebView'ı, yerel asset yükleyicisini ve Türkçe metin-okuma motorunu hazırlar; ana `index.html` dosyasını açar.
+- `shouldInterceptRequest` ve `proxyRequest`: Web arayüzünün `/proxy/...` isteklerini kontrol eder ve yalnızca izin verilen servis uçlarına iletir. Böylece WebView'ın CORS kısıtları aşılır ve API anahtarı istek başlığına Android tarafından eklenir.
+- `fotmobRequest`, `newsRequest` ve `proxyError`: FotMob, haber ve hata yanıtlarını WebView'a uygun biçimde döndürür.
+- `FavoriteAlertsBridge`: JavaScript'ten gelen bildirim tercihlerini alır; Android bildirim iznini ister, maç bildirimi gönderir, oyuncu adını seslendirir ve haber bağlantısını açar.
+- `onBackPressed`, `onSaveInstanceState` ve `onDestroy`: Geri gezinmeyi, ekran durumu kaydını ve ekran kapanırken kaynakların temizlenmesini yönetir.
+
+`FavoriteGoalWorker.kt` içindeki önemli bölümler:
+
+- `FavoriteGoalAlerts.configure`: Takip ayarlarını yerel Android tercih alanına kaydeder ve gerektiğinde periyodik işi başlatır veya durdurur.
+- `FavoriteGoalWorker.doWork`: Takip edilen takımların ve maçların verisini alır, önceki skor/durumla karşılaştırır ve yeni olaylarda bildirim üretir.
+- `fetchFixtures`: API-Sports'tan maç listesini alır; API anahtarı istekte kullanılır.
+- `checkMatchAlerts`: Maç başladı/bitti geçişlerini ve izlenen oyuncuların yeni gollerini belirler.
+- `FavoriteGoalNotification.post`: Android bildirim kanalını oluşturur ve ses/titreşimli bildirimi gösterir.
+
+### Web arayüzü (HTML, CSS ve JavaScript)
+
+| Dosya | Görevi |
+|---|---|
+| `app/src/main/assets/www/index.html` | Uygulamanın ana arayüzü ve istemci kodu. Sayfa yapısı, stiller, maç/puan durumu ekranları, servis istekleri ve etkileşimler tek dosyadadır. |
+| `app/src/main/assets/www/manifest.webmanifest` | Web arayüzünün adı, teması ve PWA simge bilgileri. |
+| `app/src/main/assets/www/sw.js` | Web servis çalışanı dosyası; Android uygulamasındaki asıl ekran ve veri işlemleri bu dosyada değildir. |
+| `app/src/main/assets/www/icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | Web uygulaması için farklı boyut ve maskeleme biçimlerindeki simgeler. |
+
+`index.html` içindeki JavaScript görevleri:
+
+- **Uygulama durumu ve yardımcılar:** `S` ekran verilerini tutar; `LS` favori/ayar verilerini cihazda saklar. `friendly`, `applyTheme`, `statusLabel` ve tarih/ülke yardımcıları ekrana uygun metin ve biçimleri üretir.
+- **Veri kaynakları:** `af` API-Sports isteklerini; `fotmobData` ve `fotmobLeague` FotMob isteklerini yapar. `getFx`, `getSt`, `favoriteTeamFixtures` maç, puan tablosu ve favori takım fikstürünü hazırlar.
+- **Veri dönüştürme ve canlı puan:** `fotmobStandings`, `fotmobFixture`, `normalizeMatchStatus` ve `normalizeFixtureStatus` servis verisini uygulama biçimine dönüştürür. `calculateLiveStandings` ve `updateLiveStandings`, oynanan maçların skoruna göre geçici canlı puan sıralaması hesaplar.
+- **Maç ve takım detayları:** `openFixture` maç merkezini yükler; `loadTeam` takım sayfasını, `loadHeadToHead` ikili maç geçmişini, `loadMatchTable` ilgili puan durumunu, `loadMatchNews` haberleri getirir. `lineupFrom` ve `lineupFromApiSports` kadroları ortak biçime çevirir.
+- **Maç olayları ve istatistikler:** `matchEvents`, `matchEventList` ve `translateMatchEventDetail` anlatım olaylarını hazırlar ve Türkçeleştirir. `momentumChart`, `matchFormSummary`, `fotmobMatchStats`, `matchShotMap` ve `ratedMatchPlayers` ilgili grafik, form, şut ve oyuncu istatistiklerini üretir.
+- **Oyuncu ve saha:** `playerProfilePage` ve `loadPlayerCareer` oyuncu profilini/kariyerini gösterir. `lineupPlayer`, `averagePositionFor`, `averagePositionPitch` ve `lineupCard` oyuncu bilgilerini ve iki ayrı saha görünümünü oluşturur.
+- **Favoriler ve bildirimler:** `toggleFav`, `toggleTeamFavorite`, `toggleMatchAlert` ve `togglePlayerAlert` seçimleri yönetir. `pollFavoriteGoals` uygulama açıkken kontrol yapar; `syncBackgroundAlerts` tercihleri Kotlin köprüsüne iletir.
+- **Ekran çizimi ve etkileşim:** `matches`, `standings`, `myTeams`, `teamPage`, `fixturePage` ve `playerProfilePage` ekran içeriğini üretir. `render` ana ekranı çizer; `renderFixtureDetail` maç ayrıntısında yalnızca gereken bölümü günceller. `matchTabChanged` sekme verisini yükler; tıklama/değişiklik dinleyicileri butonları ve seçimleri işler.
+
+### Gradle ve uygulama yapılandırması
+
+- `app/build.gradle.kts`: Android modülünü, bağımlılıkları ve derleme ayarlarını tanımlar. `local.properties` içindeki `aknsporApiKey` değerini derleme sırasında APK'ya aktarır; bu dosya Git'e eklenmemelidir.
+- `build.gradle.kts` ve `settings.gradle.kts`: Gradle eklentilerini ve projedeki modülleri tanımlar.
+- `gradle.properties`: Gradle derleme ayarlarını içerir.
+- `gradle/wrapper/`: Projenin kullandığı Gradle sürümünü ve Windows/Linux başlatıcılarını içerir.
+- `.gitignore`: Yerel ayarları, API anahtarının bulunduğu `local.properties` dosyasını ve derleme çıktılarını Git dışında tutar.
 
 Match sections update their own content without rebuilding the entire page. This preserves the sticky match-tab bar while the user scrolls and while match data refreshes in the background.
 
